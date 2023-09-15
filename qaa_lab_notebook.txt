@@ -1,0 +1,223 @@
+QAA Lab notebook started 09/06/2023
+
+I was assigned 3_2B_control_S3_L008    
+3_2B_control_S3_L008_R1_001.fastq.gz
+3_2B_control_S3_L008_R2_001.fastq.gz
+32_4G_both_S23_L008_R1_001.fastq.gz
+32_4G_both_S23_L008_R2_001.fastq.gz
+Use fastqc to generate qc plots of the sequencing data.
+fastqc is already installed on Talapas, so we can use module system to find it
+first run:
+module spider fastq
+After Talapas finds this module, highlight module load fastqc/0.11.1, copy, and paste into the 
+terminal
+"fastqc /projects/bgmp/shared/2017_sequencing/demultiplexed/32_4G_both_S23_L008_R2_001.fastq.gz -o 
+/projects/bgmp/sgolubev/bioinfo/Bi623/PS/QAA/QAA/both_R2"
+
+
+
+Create conda qaa enviroment
+conda create --name qaa
+conda activate qaa
+conda install cutadapt
+conda install trimmomatic 
+
+verify correct versions of the packages
+cutadapt --version 4.4
+trimmomatic -version 0.39
+
+09/08/2023
+cutadapt 
+Illumina adapters have the following sequences 
+R1: AGATCGGAAGAGCACACGTCTGAACTCCAGTCA
+R2: AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+
+Check how many reads have adapter sequences in the original files with the following command for R1
+in control samples
+zcat 3_2B_control_S3_L008_R1_001.fastq.gz| grep -A1 --no-group-separator '^@'| grep -v '^@'|
+grep 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCA'| wc -l
+
+Result: 7659 sequences
+
+I also tried to reverse compliment the R1 adapter and see if I find any sequences in that configura-
+tion
+
+zcat 3_2B_control_S3_L008_R1_001.fastq.gz| grep -A1 --no-group-separator '^@'| grep -v '^@'|
+grep 'TGACTGGAGTTCAGACGTGTGCTCTTCCGATCT'| wc -l
+
+Result: 0 sequences 
+
+I checked if there are R2 adapters just for sanity check and got 0 sequences for both forward and
+reverse compliment R2 adapters
+
+Checked how many adapter sequences I have in control R2 sample
+
+Tested R2 illumina adapter sequence as is (without reverse complementing)
+zcat 3_2B_control_S3_L008_R2_001.fastq.gz| grep -A1 --no-group-separator '^@'| grep -v '^@'|
+grep 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT'| wc -l
+
+Also reverse complemented the R2 to check the orientation on the reads and got 0 counts for reverse
+compliment
+
+This means that I can use adapter sequences R1 and R2 for cutadapt without reverse complementing
+
+Run cutadapt:
+In the documentation, look for trimming paired-end reads the general command is as follows:
+
+cutadapt -a ADAPTER_FWD -A ADAPTER_REV -o out.1.fastq -p out.2.fastq reads.1.fastq reads.2.fastq
+
+where -a is forward adapter
+      -A is reverse adapter
+      -o output file 1
+      -p output file 2
+      - reads R1 fastq
+      - reads R2 fastq 
+I wrote a bash script for running cutadapt called cutadapt.sh
+
+ time output for cutadapt
+Finished in 94.205 s (7.970 µs/read; 7.53 M reads/minute) with 32Gb of memory
+
+After the cutadapt finished running, I checked if there are any R1 adapter sequences in control R1
+sample with command
+grep -A1 --no-group-separator '^@' 32_4G_both_S23_L008_R1_001.acut.fastq | grep -v '^@'|
+grep 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCA'| wc -l
+
+in control R2 sequences
+grep -A1 --no-group-separator '^@' 32_4G_both_S23_L008_R2_001.acut.fastq | grep -v '^@'|
+grep 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT'| wc -l
+
+Got 0 in both cases
+Repeated the same for the other 2 files and got 0 in all cases
+
+Checked the average read length with the following command:
+
+zcat 32_4G_both_S23_L008_R1_001.acut.fastq.gz|grep -A1 --no-group-separator '^@'| grep -v '^@'|
+awk ' { thislen=length($0); totlen+=thislen}END { printf("average: %d\n", totlen/NR); } '
+
+All reads before cutting adapters had length 101bp
+
+After cutting adapters:
+
+|Sample                               |Avg read length after cutadapt|
+|-------------------------------------|------------------------------|
+|32_4G_both_S23_L008_R1_001.acut.fastq| 100                           |
+|32_4G_both_S23_L008_R2_001.acut.fastq| 100                           |
+|3_2B_control_S3_L008_R1_001.acut.fastq| 100                          |
+|3_2B_control_S3_L008_R2_001.acut.fastq| 100                          |
+
+trimmomatic
+
+Trimmomatic will trim Illumina FASTQ data. It will clip the reads using sliding window approach.
+
+General command as follows for the paired-ed reads:
+java -jar trimmomatic-0.39.jar PE -threads <n>-phred33 input_forward.fq.gz input_reverse.fq.gz
+output_forward_paired.fq.gz output_forward_unpaired.fq.gz output_reverse_paired.fq.gz
+output_reverse_unpaired.fq.gz
+ILLUMINACLIP:TruSeq3-PE.fa:2:30:10:2:True LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+
+ILLUMINACLIP:TruSeq3-PE.fa:2:30:10:2:True is option to look for adapters and cut them. Since I
+removed adapters from my sequences with cutadapt, this option is not necessary and should be removed.
+
+
+I wrote a bash script for running trimmomatic called trimmomatic_witiout_ada_cut.sh
+
+Please Note! The command starts with java -jar trimmomatic-0.39.jar, remove that and type just
+trimmomatic instead 
+The input files could be gzipped or not. If you specify .gz extention for the output files, 
+trimmomatic will zip them automatically.
+
+Trimmomatic will create 4 files:
+1. forward paired 
+2. forward unpaired 
+3. reverse paired
+4. reverse unpaired
+
+the reads that end up too short (less than 35bp) will be removed from the file, and their pair read
+if it's long enough will be placed into the unpaired files
+
+files for 'both' condition were saved in the trim_both folder
+files for 'control' condition were saved in the trim_control folder
+
+trimmomatic slurm output
+ User time (seconds): 637.02
+        System time (seconds): 9.78
+        Percent of CPU this job got: 99%
+
+Check the length distribution of the trimmed reads
+zcat trimmed_reads.fq| grep -A1 '^@' --no-group-separator |grep -v '^@'|awk '{print length($0)}'|
+ sort| uniq -c| sort
+ 
+
+9/10/2023
+Part3 Alignment and strand-specificity
+
+Istall the following in the QAA enviroment 
+ star:
+ conda install star -c bioconda
+ STAR -- version 2.7.10b
+
+numpy:
+conda install numpy
+
+matplotlib:
+conda install matplotlib 
+
+htseq:
+conda install htseq
+
+Downloaded the latest mouse full genome assembly file from biomart with wget
+Mus_musculus.GRCm39.dna_sm.primary_assembly.fa.gz
+
+and a GTF file 
+Mus_musculus.GRCm39.110.gtf.gz
+
+First I needed to create a star database using the mouse genome assembly and the feature (GTF) file
+I wrote a bash script to do thislen
+
+Note: unzip the genome and GTF files before running star! 
+
+slurm output for creating star database
+ User time (seconds): 5128.08
+        System time (seconds): 49.24
+        Percent of CPU this job got: 500%
+        Elapsed (wall clock) time (h:mm:ss or m:ss): 17:15.36
+
+After aligning the reads to the mouse genome, ran my python script that looks at each read's bitwise
+flag to count how many reads aligned to the mouse genome and how many did not align.
+
+results for the "both" condition: count_mapped=22404319 count_unmapped=533613
+
+results for the "control" condition: count_mapped=12359959 count_unmapped=496079
+
+
+
+Counting alignments with htseq
+The general command as follows:
+htseq-count [options] <alignment_files> <gff_file>
+
+I wrote a script for running the htseq called hrseq.sh
+htseq-count --stranded=reverse aligned_without_trim_cut_ada/aligned_mouse_both_Aligned.out.sam genome/
+Mus_musculus.GRCm39.110.gtf >htseq_both_count_reverse.tsv 
+First, I ran it with --stranded=yes option to see the output if the kit used for the library prep
+was stranded
+
+User time (seconds): 535.06
+        System time (seconds): 3.76
+        Percent of CPU this job got: 99%
+        Elapsed (wall clock) time (h:mm:ss or m:ss): 9:02.70
+
+
+Next, I ran it with --stranded=reverse option to compare the output to the stranded option and see which
+kit was used
+
+ User time (seconds): 553.75
+        System time (seconds): 3.86
+        Percent of CPU this job got: 99%
+        Elapsed (wall clock) time (h:mm:ss or m:ss): 9:21.75
+
+/usr/bin/time -v htseq-count --stranded=reverse aligned_without_trim_cut_ada/
+aligned_mouse_control_Aligned.out.sam genome/Mus_musculus.GRCm39.110.gtf > control_feature_count_nonstranded.tsv
+
+To check what percent of reads aligned to features, I used the following command:
+
+awk '$1 ~ "ENS"{s+=$2}{n+=$2}END{print s*100/n}' both_feature_count.tsv 
